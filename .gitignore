@@ -1,0 +1,8 @@
+.env
+.streamlit/secrets.toml
+__pycache__/
+results/*.csv
+results/*.json
+tmp_flight_pdf/
+flight_check.py
+flight_check
