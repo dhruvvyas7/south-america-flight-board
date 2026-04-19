@@ -223,24 +223,53 @@ def render_results(
         with st.container(border=True):
             title_col, price_col = st.columns([4, 1])
             with title_col:
-                st.markdown(
-                    f"**{idx}. {render_value(row['airlines'])}**"
-                    f"  \n{render_value(row['departure_airports'])} -> "
-                    f"{render_value(row['arrival_airports'])}"
-                )
+                if row.get("trip_type") == "multi_city":
+                    st.markdown(
+                        f"**{idx}. Total itinerary option**"
+                        f"  \n{render_value(row.get('route_summary'))}"
+                    )
+                else:
+                    st.markdown(
+                        f"**{idx}. {render_value(row['airlines'])}**"
+                        f"  \n{render_value(row['departure_airports'])} -> "
+                        f"{render_value(row['arrival_airports'])}"
+                    )
             with price_col:
-                st.metric("Price", render_value(row["price_display"]))
+                metric_label = "Total trip price" if row.get("trip_type") == "multi_city" else "Price"
+                st.metric(metric_label, render_value(row["price_display"]))
 
             info_col1, info_col2, info_col3 = st.columns(3)
             with info_col1:
-                st.write(f"Departure: {render_value(row['departure_times'])}")
-                st.write(f"Arrival: {render_value(row['arrival_times'])}")
+                if row.get("trip_type") == "multi_city":
+                    st.write(f"Trip route: {render_value(row.get('route_summary'))}")
+                    st.write(f"Airlines: {render_value(row['airlines'])}")
+                else:
+                    st.write(f"Departure: {render_value(row['departure_times'])}")
+                    st.write(f"Arrival: {render_value(row['arrival_times'])}")
             with info_col2:
                 st.write(f"Duration: {render_value(row['duration'])}")
                 st.write(f"Stops: {render_value(row['stops'])}")
             with info_col3:
                 st.write(f"Source section: {render_value(row['source_section'])}")
                 st.write(f"Booking seller: {render_value(row['booking_provider'])}")
+
+            if row.get("trip_type") == "multi_city" and row.get("itinerary_legs"):
+                st.markdown("**Leg-by-leg breakdown**")
+                for leg in row["itinerary_legs"]:
+                    with st.expander(
+                        f"Leg {leg['leg_number']}: {render_value(leg['route'])} | "
+                        f"{render_value(leg['departure_time'])} -> {render_value(leg['arrival_time'])}"
+                    ):
+                        st.write(f"Airlines: {render_value(leg['airlines'])}")
+                        st.write(f"Stops: {render_value(leg['stops'])}")
+                        for segment in leg["segments"]:
+                            st.markdown(
+                                f"- {render_value(segment['route'])} | "
+                                f"{render_value(segment['departure_time'])} -> "
+                                f"{render_value(segment['arrival_time'])} | "
+                                f"{render_value(segment['airline'])} {render_value(segment['flight_number'])} | "
+                                f"{render_value(segment['duration'])}"
+                            )
 
             booking_link = row.get("booking_link")
             if booking_link:

@@ -30,7 +30,13 @@ def search_flights(
         passengers=passengers,
         currency=currency,
     )
-    normalized_rows = normalize_flight_rows(api_key=api_key, payload=payload, currency=currency)
+    normalized_rows = normalize_flight_rows(
+        api_key=api_key,
+        payload=payload,
+        currency=currency,
+        trip_type="one_way",
+        requested_legs=[{"origin": origin, "destination": destination, "departure_date": departure_date}],
+    )
     return payload, normalized_rows
 
 
@@ -46,7 +52,13 @@ def search_multi_city_flights(
         passengers=passengers,
         currency=currency,
     )
-    normalized_rows = normalize_flight_rows(api_key=api_key, payload=payload, currency=currency)
+    normalized_rows = normalize_flight_rows(
+        api_key=api_key,
+        payload=payload,
+        currency=currency,
+        trip_type="multi_city",
+        requested_legs=legs,
+    )
     return payload, normalized_rows
 
 
@@ -66,6 +78,7 @@ def fetch_flights(
         "currency": currency,
         "type": "2",
         "adults": str(passengers),
+        "deep_search": "true",
         "hl": "en",
         "gl": "us",
         "api_key": api_key,
@@ -111,6 +124,7 @@ def fetch_multi_city_flights(
         ),
         "currency": currency,
         "adults": str(passengers),
+        "deep_search": "true",
         "hl": "en",
         "gl": "us",
         "api_key": api_key,
@@ -139,12 +153,15 @@ def normalize_flight_rows(
     api_key: str,
     payload: dict[str, Any],
     currency: str,
+    trip_type: str,
+    requested_legs: list[dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
 
     for section_name in ("best_flights", "other_flights"):
         for result_index, group in enumerate(payload.get(section_name, []), start=1):
             flights = group.get("flights", [])
+            itinerary_legs = build_itinerary_legs(flights, requested_legs or [])
             booking_provider, booking_link = fetch_booking_details(
                 api_key=api_key,
                 booking_token=group.get("booking_token"),
@@ -152,11 +169,13 @@ def normalize_flight_rows(
             )
             rows.append(
                 {
+                    "trip_type": trip_type,
                     "source_section": section_name,
                     "result_index": result_index,
                     "price": group.get("price"),
                     "price_display": format_price(group.get("price"), currency),
                     "airlines": collect_airlines(flights),
+                    "route_summary": build_route_summary(itinerary_legs, flights),
                     "departure_airports": join_values(
                         flight.get("departure_airport", {}).get("id") for flight in flights
                     ),
@@ -171,6 +190,7 @@ def normalize_flight_rows(
                     ),
                     "duration": format_duration(group.get("total_duration")),
                     "stops": format_stops(flights),
+                    "itinerary_legs": itinerary_legs,
                     "booking_provider": booking_provider,
                     "booking_link": booking_link,
                 }
@@ -234,6 +254,86 @@ def collect_airlines(flights: list[dict[str, Any]]) -> str | None:
         if airline and airline not in airlines:
             airlines.append(airline)
     return ", ".join(airlines) if airlines else None
+
+
+def build_itinerary_legs(
+    flights: list[dict[str, Any]],
+    requested_legs: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    if not flights:
+        return []
+
+    if not requested_legs:
+        return [build_leg_summary(flights, 1)]
+
+    itinerary_legs: list[dict[str, Any]] = []
+    current_segments: list[dict[str, Any]] = []
+    current_leg_index = 0
+
+    for flight in flights:
+        current_segments.append(flight)
+        if current_leg_index >= len(requested_legs):
+            continue
+
+        expected_destination = requested_legs[current_leg_index].get("destination")
+        actual_destination = flight.get("arrival_airport", {}).get("id")
+        if actual_destination == expected_destination:
+            itinerary_legs.append(build_leg_summary(current_segments, current_leg_index + 1))
+            current_segments = []
+            current_leg_index += 1
+
+    if current_segments:
+        itinerary_legs.append(build_leg_summary(current_segments, current_leg_index + 1))
+
+    return itinerary_legs
+
+
+def build_leg_summary(segments: list[dict[str, Any]], leg_number: int) -> dict[str, Any]:
+    first_segment = segments[0]
+    last_segment = segments[-1]
+    airlines = collect_airlines(segments)
+    return {
+        "leg_number": leg_number,
+        "route": (
+            f"{first_segment.get('departure_airport', {}).get('id', 'Unknown')} -> "
+            f"{last_segment.get('arrival_airport', {}).get('id', 'Unknown')}"
+        ),
+        "departure_time": first_segment.get("departure_airport", {}).get("time"),
+        "arrival_time": last_segment.get("arrival_airport", {}).get("time"),
+        "airlines": airlines,
+        "stops": format_stops(segments),
+        "segments": [
+            {
+                "route": (
+                    f"{segment.get('departure_airport', {}).get('id', 'Unknown')} -> "
+                    f"{segment.get('arrival_airport', {}).get('id', 'Unknown')}"
+                ),
+                "departure_time": segment.get("departure_airport", {}).get("time"),
+                "arrival_time": segment.get("arrival_airport", {}).get("time"),
+                "airline": segment.get("airline"),
+                "flight_number": segment.get("flight_number"),
+                "duration": format_duration(segment.get("duration")),
+            }
+            for segment in segments
+        ],
+    }
+
+
+def build_route_summary(
+    itinerary_legs: list[dict[str, Any]],
+    flights: list[dict[str, Any]],
+) -> str | None:
+    if itinerary_legs:
+        return " | ".join(str(leg.get("route")) for leg in itinerary_legs if leg.get("route"))
+
+    if not flights:
+        return None
+
+    start = flights[0].get("departure_airport", {}).get("id")
+    end = flights[-1].get("arrival_airport", {}).get("id")
+    if start and end:
+        return f"{start} -> {end}"
+    return None
 
 
 def join_values(values: Any) -> str | None:
