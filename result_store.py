@@ -30,17 +30,20 @@ def save_search_results(
     json_path.write_text(json.dumps(json_content, indent=2), encoding="utf-8")
 
     fieldnames = [
+        "trip_type",
         "source_section",
         "result_index",
         "price",
         "price_display",
         "airlines",
+        "route_summary",
         "departure_airports",
         "arrival_airports",
         "departure_times",
         "arrival_times",
         "duration",
         "stops",
+        "itinerary_legs_json",
         "booking_provider",
         "booking_link",
     ]
@@ -48,7 +51,7 @@ def save_search_results(
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for row in normalized_rows:
-            writer.writerow(row)
+            writer.writerow(build_csv_row(row))
 
     return str(json_path), str(csv_path)
 
@@ -70,3 +73,10 @@ def build_filename_stub(search_params: dict[str, Any]) -> str:
 def sanitize_filename_part(value: str) -> str:
     cleaned = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value)
     return cleaned.strip("_") or "results"
+
+
+def build_csv_row(row: dict[str, Any]) -> dict[str, Any]:
+    csv_row = dict(row)
+    itinerary_legs = csv_row.pop("itinerary_legs", None)
+    csv_row["itinerary_legs_json"] = json.dumps(itinerary_legs, ensure_ascii=True) if itinerary_legs else ""
+    return csv_row
