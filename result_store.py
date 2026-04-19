@@ -31,12 +31,15 @@ def save_search_results(
 
     fieldnames = [
         "trip_type",
+        "requested_route_summary",
+        "requested_dates_summary",
         "source_section",
         "result_index",
         "price",
         "price_display",
         "airlines",
         "route_summary",
+        "layover_summary",
         "departure_airports",
         "arrival_airports",
         "departure_times",
@@ -44,11 +47,12 @@ def save_search_results(
         "duration",
         "stops",
         "itinerary_legs_json",
+        "source_detail_scope",
         "booking_provider",
         "booking_link",
     ]
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         for row in normalized_rows:
             writer.writerow(build_csv_row(row))

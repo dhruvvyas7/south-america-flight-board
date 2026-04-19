@@ -170,12 +170,15 @@ def normalize_flight_rows(
             rows.append(
                 {
                     "trip_type": trip_type,
+                    "requested_route_summary": build_requested_route_summary(requested_legs or []),
+                    "requested_dates_summary": build_requested_dates_summary(requested_legs or []),
                     "source_section": section_name,
                     "result_index": result_index,
                     "price": group.get("price"),
                     "price_display": format_price(group.get("price"), currency),
                     "airlines": collect_airlines(flights),
                     "route_summary": build_route_summary(itinerary_legs, flights),
+                    "layover_summary": build_layover_summary(group.get("layovers", [])),
                     "departure_airports": join_values(
                         flight.get("departure_airport", {}).get("id") for flight in flights
                     ),
@@ -191,6 +194,11 @@ def normalize_flight_rows(
                     "duration": format_duration(group.get("total_duration")),
                     "stops": format_stops(flights),
                     "itinerary_legs": itinerary_legs,
+                    "source_detail_scope": (
+                        "Returned segment details cover the surfaced leg from the source response."
+                        if trip_type == "multi_city"
+                        else "Returned detail covers the selected route."
+                    ),
                     "booking_provider": booking_provider,
                     "booking_link": booking_link,
                 }
@@ -298,10 +306,15 @@ def build_leg_summary(segments: list[dict[str, Any]], leg_number: int) -> dict[s
             f"{first_segment.get('departure_airport', {}).get('id', 'Unknown')} -> "
             f"{last_segment.get('arrival_airport', {}).get('id', 'Unknown')}"
         ),
+        "route_airports": [
+            segment.get("departure_airport", {}).get("id", "Unknown") for segment in segments
+        ]
+        + [last_segment.get("arrival_airport", {}).get("id", "Unknown")],
         "departure_time": first_segment.get("departure_airport", {}).get("time"),
         "arrival_time": last_segment.get("arrival_airport", {}).get("time"),
         "airlines": airlines,
         "stops": format_stops(segments),
+        "stop_airports": build_stop_airports(segments),
         "segments": [
             {
                 "route": (
@@ -313,6 +326,7 @@ def build_leg_summary(segments: list[dict[str, Any]], leg_number: int) -> dict[s
                 "airline": segment.get("airline"),
                 "flight_number": segment.get("flight_number"),
                 "duration": format_duration(segment.get("duration")),
+                "extensions": segment.get("extensions", []),
             }
             for segment in segments
         ],
@@ -334,6 +348,43 @@ def build_route_summary(
     if start and end:
         return f"{start} -> {end}"
     return None
+
+
+def build_requested_route_summary(requested_legs: list[dict[str, str]]) -> str | None:
+    if not requested_legs:
+        return None
+    airports = [requested_legs[0].get("origin", "Unknown")]
+    airports.extend(leg.get("destination", "Unknown") for leg in requested_legs)
+    return " -> ".join(airport for airport in airports if airport)
+
+
+def build_requested_dates_summary(requested_legs: list[dict[str, str]]) -> str | None:
+    if not requested_legs:
+        return None
+    return " | ".join(
+        f"Leg {index}: {leg.get('departure_date', 'Unknown')}" for index, leg in enumerate(requested_legs, start=1)
+    )
+
+
+def build_layover_summary(layovers: list[dict[str, Any]]) -> str | None:
+    if not layovers:
+        return "Nonstop"
+    parts = []
+    for layover in layovers:
+        airport_code = layover.get("id") or layover.get("name") or "Unknown stop"
+        duration_text = format_duration(layover.get("duration"))
+        if duration_text:
+            parts.append(f"{airport_code} ({duration_text})")
+        else:
+            parts.append(str(airport_code))
+    return ", ".join(parts)
+
+
+def build_stop_airports(segments: list[dict[str, Any]]) -> str:
+    if len(segments) <= 1:
+        return "Nonstop"
+    stops = [segment.get("arrival_airport", {}).get("id", "Unknown") for segment in segments[:-1]]
+    return " -> ".join(stops)
 
 
 def join_values(values: Any) -> str | None:

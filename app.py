@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -162,6 +162,17 @@ def render_value(value: str | None) -> str:
     return value if value else "Not available"
 
 
+def format_datetime_label(value: str | None) -> str:
+    if not value:
+        return "Not available"
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d %H:%M")
+        formatted = parsed.strftime("%b %d, %Y at %I:%M %p")
+        return formatted.replace(" 0", " ")
+    except Exception:
+        return value
+
+
 def airport_input(
     label: str,
     label_key: str,
@@ -226,7 +237,7 @@ def render_results(
                 if row.get("trip_type") == "multi_city":
                     st.markdown(
                         f"**{idx}. Total itinerary option**"
-                        f"  \n{render_value(row.get('route_summary'))}"
+                        f"  \n{render_value(row.get('requested_route_summary'))}"
                     )
                 else:
                     st.markdown(
@@ -241,35 +252,58 @@ def render_results(
             info_col1, info_col2, info_col3 = st.columns(3)
             with info_col1:
                 if row.get("trip_type") == "multi_city":
-                    st.write(f"Trip route: {render_value(row.get('route_summary'))}")
+                    st.write(f"Trip route: {render_value(row.get('requested_route_summary'))}")
+                    st.write(f"Trip dates: {render_value(row.get('requested_dates_summary'))}")
                     st.write(f"Airlines: {render_value(row['airlines'])}")
                 else:
-                    st.write(f"Departure: {render_value(row['departure_times'])}")
-                    st.write(f"Arrival: {render_value(row['arrival_times'])}")
+                    st.write(f"Departure: {format_datetime_label(row['departure_times'])}")
+                    st.write(f"Arrival: {format_datetime_label(row['arrival_times'])}")
             with info_col2:
                 st.write(f"Duration: {render_value(row['duration'])}")
                 st.write(f"Stops: {render_value(row['stops'])}")
+                st.write(f"Layovers: {render_value(row.get('layover_summary'))}")
             with info_col3:
                 st.write(f"Source section: {render_value(row['source_section'])}")
                 st.write(f"Booking seller: {render_value(row['booking_provider'])}")
+                if row.get("trip_type") == "multi_city":
+                    st.caption(render_value(row.get("source_detail_scope")))
 
             if row.get("trip_type") == "multi_city" and row.get("itinerary_legs"):
                 st.markdown("**Leg-by-leg breakdown**")
                 for leg in row["itinerary_legs"]:
                     with st.expander(
                         f"Leg {leg['leg_number']}: {render_value(leg['route'])} | "
-                        f"{render_value(leg['departure_time'])} -> {render_value(leg['arrival_time'])}"
+                        f"{format_datetime_label(leg['departure_time'])} -> {format_datetime_label(leg['arrival_time'])}"
                     ):
-                        st.write(f"Airlines: {render_value(leg['airlines'])}")
-                        st.write(f"Stops: {render_value(leg['stops'])}")
-                        for segment in leg["segments"]:
-                            st.markdown(
-                                f"- {render_value(segment['route'])} | "
-                                f"{render_value(segment['departure_time'])} -> "
-                                f"{render_value(segment['arrival_time'])} | "
-                                f"{render_value(segment['airline'])} {render_value(segment['flight_number'])} | "
-                                f"{render_value(segment['duration'])}"
+                        leg_meta_left, leg_meta_right = st.columns(2)
+                        with leg_meta_left:
+                            st.write(f"Airlines: {render_value(leg['airlines'])}")
+                            st.write(f"Stops: {render_value(leg['stops'])}")
+                        with leg_meta_right:
+                            st.write(f"Stop airports: {render_value(leg.get('stop_airports'))}")
+                            st.write(
+                                "Airport path: "
+                                + render_value(" -> ".join(leg.get("route_airports", [])))
                             )
+                        for segment in leg["segments"]:
+                            with st.container(border=True):
+                                st.markdown(f"**{render_value(segment['route'])}**")
+                                seg_col1, seg_col2, seg_col3 = st.columns(3)
+                                with seg_col1:
+                                    st.write(f"Depart: {format_datetime_label(segment['departure_time'])}")
+                                    st.write(f"Arrive: {format_datetime_label(segment['arrival_time'])}")
+                                with seg_col2:
+                                    st.write(
+                                        f"Flight: {render_value(segment['airline'])} "
+                                        f"{render_value(segment['flight_number'])}"
+                                    )
+                                    st.write(f"Duration: {render_value(segment['duration'])}")
+                                with seg_col3:
+                                    extensions = segment.get("extensions") or []
+                                    if extensions:
+                                        st.write("Details:")
+                                        for extension in extensions[:3]:
+                                            st.write(f"- {extension}")
 
             booking_link = row.get("booking_link")
             if booking_link:
