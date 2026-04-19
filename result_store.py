@@ -17,10 +17,9 @@ def save_search_results(
     target_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    origin = search_params["origin"]
-    destination = search_params["destination"]
-    json_path = target_dir / f"{timestamp}_{origin}_{destination}.json"
-    csv_path = target_dir / f"{timestamp}_{origin}_{destination}.csv"
+    filename_stub = build_filename_stub(search_params)
+    json_path = target_dir / f"{timestamp}_{filename_stub}.json"
+    csv_path = target_dir / f"{timestamp}_{filename_stub}.csv"
 
     json_content = {
         "saved_at": datetime.now().isoformat(),
@@ -52,3 +51,22 @@ def save_search_results(
             writer.writerow(row)
 
     return str(json_path), str(csv_path)
+
+
+def build_filename_stub(search_params: dict[str, Any]) -> str:
+    if search_params.get("search_mode") == "multi_city":
+        legs = search_params.get("legs", [])
+        if legs:
+            first_origin = str(legs[0].get("origin", "trip"))
+            last_destination = str(legs[-1].get("destination", "trip"))
+            return sanitize_filename_part(f"multi_{first_origin}_{last_destination}")
+        return "multi_trip"
+
+    origin = str(search_params.get("origin", "unknown_origin"))
+    destination = str(search_params.get("destination", "unknown_destination"))
+    return sanitize_filename_part(f"{origin}_{destination}")
+
+
+def sanitize_filename_part(value: str) -> str:
+    cleaned = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value)
+    return cleaned.strip("_") or "results"
